@@ -2,8 +2,9 @@ import numpy as np
 import pandas
 from sklearn import preprocessing
 
-# Threshold coefficient.
-m = 0.5
+
+k = 6    # Number of clusters
+m = 0.5  # Threshold coefficient, m varies between (0,1)
 
 
 def preprocess(input_path):
@@ -81,3 +82,48 @@ def select_dim(data_i, V, selection_threshold, mu_hat_i=None):
         if sample_var_i[j] ** 2 + (mu_i[j] - mu_tilde_i[j]) ** 2 < selection_threshold[j] ** 2:
             selected_dim[j] = 1
     return selected_dim
+
+
+def column(matrix, i):
+    return [row[i] for row in matrix]
+
+
+def score_function_ij(i, data_j, medoids=None):
+    ni = len(data_j)
+    miu = np.mean(data_j)
+    sample_var = np.var(data_j, ddof=1)
+    selection_threshold = m * sample_var
+    
+    if medoids:
+        miu_tilda = data_j[medoids[i]]  # Assuming the medoids are in list format
+    else:
+        # Assuming correct input to the function where the lengths of two features are the same
+        miu_tilda = np.median(data_j)
+
+    phi_ij = (ni - 1) * (1 - (sample_var + (miu - miu_tilda)**2)/selection_threshold)
+    return phi_ij
+
+
+def score_function_i(i, data_i, medoids=None):
+    
+    phi_ij = []
+    
+    for j in selected_dimension:
+        phi_ij.append(score_function_ij(i, column(data,j), medoids))
+    
+    # TODO: phi_ij can be re-used maybe?
+    # phi_i = sum(phi_ij)
+    return phi_ij
+
+
+def score_function_all(data):
+    
+    phi_i = []
+    n = len(data)
+    d = len(data[0])
+    
+    for k in clusters:
+        phi_i.append(score_function_i_updated(k,data[k]))
+        
+    phi = sum(phi_i)/(n*d)
+    return phi
