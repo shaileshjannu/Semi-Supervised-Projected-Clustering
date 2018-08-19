@@ -20,12 +20,14 @@ def preprocess(input_path):
     return data
 
 
-def calc_selection_threshold(data, V):
+def calc_selection_threshold(data):
+    V = data.shape[1]
     selection_threshold = [m * np.var(data[:, j], ddof=1) for j in range(V)]
     return selection_threshold
 
 
-def calc_stats_i(data_i, V):
+def calc_stats_i(data_i):
+    V = data_i.shape[1]
     mu_i = []
     mu_tilde_i = []
     sample_var_i = []
@@ -43,7 +45,9 @@ def calc_stats_i(data_i, V):
     return mu_i, mu_tilde_i, sample_var_i
 
 
-def calc_stats(data, C, V):
+def calc_stats(data):
+    C, V = data.shape
+    
     # Calculate sample median, sample mean, sample variance.
     mu = []
     mu_tilde = []
@@ -52,7 +56,7 @@ def calc_stats(data, C, V):
     # Loop over clusters.
     for i in C:
         data_i = data[i]
-        mu_i, mu_tilde_i, sample_var_i = calc_stats_i(data_i, V)
+        mu_i, mu_tilde_i, sample_var_i = calc_stats_i(data_i)
         mu.append(mu_i)
         mu_tilde.append(mu_tilde_i)
         sample_var.append(sample_var_i)
@@ -62,16 +66,18 @@ def calc_stats(data, C, V):
             'sample_var': sample_var}
 
 
-def select_dim(data_i, V, selection_threshold, mu_hat_i=None):
+def select_dim(data_i, selection_threshold, mu_hat_i=None):
     """
     Select relevant dimensions for clusters, which must obey:
     s[i][j] ** 2 + (mu[i][j] - mu_tilde[i][j]) ** 2 < s_hat[i][j] ** 2
     """
+    V = data_i.shape[1]
+    
     # Return a list of 0/1 values to show whether dim_j is selected.
     selected_dim = np.zeros(V)
 
     # Calculate relevant statistics.
-    mu_i, mu_tilde_i, sample_var_i = calc_stats_i(data_i, V)
+    mu_i, mu_tilde_i, sample_var_i = calc_stats_i(data_i)
 
     # Use medoids if given.
     if mu_hat_i is not None:
@@ -104,7 +110,7 @@ def score_function_ij(i, data_j, medoids=None):
     return phi_ij
 
 
-def score_function_i(i, data_i, medoids=None):
+def score_function_i(i, selected_dimension, medoids=None):
     
     phi_ij = []
     
