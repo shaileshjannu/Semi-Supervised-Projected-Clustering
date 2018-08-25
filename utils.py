@@ -13,10 +13,16 @@ def preprocess(input_path):
 
     # Convert string data columns to categorical.
     obj_columns = df.select_dtypes(['object']).columns
-    df[obj_columns] = df[obj_columns].astype('category').apply(lambda x: x.cat.codes)
-
-    # Scaling.
-    data = preprocessing.scale(np.array(df))
+    
+    # Ignore categorical values for now.
+    df = df.drop(df[obj_columns], axis=1)
+    
+    # TODO: Convert categorical data to a reasonable form.
+    # df[obj_columns] = df[obj_columns].astype('category').apply(lambda x: x.cat.codes)
+    
+    # TODO: Think about scaling.
+    # data = preprocessing.scale(np.array(df))
+    data = np.array(df)
     return data
 
 
@@ -74,7 +80,7 @@ def select_dim(data_i, selection_threshold, mu_hat_i=None):
     V = data_i.shape[1]
     
     # Return a list of 0/1 values to show whether dim_j is selected.
-    selected_dim = np.zeros(V)
+    selected_dims = []
 
     # Calculate relevant statistics.
     mu_i, mu_tilde_i, sample_var_i = calc_stats_i(data_i)
@@ -86,8 +92,8 @@ def select_dim(data_i, selection_threshold, mu_hat_i=None):
     # Loop over clusters to find relevant dimensions.
     for j in range(V):
         if sample_var_i[j] ** 2 + (mu_i[j] - mu_tilde_i[j]) ** 2 < selection_threshold[j] ** 2:
-            selected_dim[j] = 1
-    return selected_dim
+            selected_dims.append(j)
+    return selected_dims
 
 
 def column(matrix, i):
