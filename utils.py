@@ -41,16 +41,15 @@ def calc_stats_i(data_i):
     return mu_i, mu_tilde_i, sample_var_i
 
 
-def calc_stats(data):
-    C, V = data.shape
-    
+def calc_stats(data, clusters):
+
     # Calculate sample median, sample mean, sample variance.
     mu = []
     mu_tilde = []
     sample_var = []
 
     # Loop over clusters.
-    for i in C:
+    for i in clusters:
         data_i = data[i]
         mu_i, mu_tilde_i, sample_var_i = calc_stats_i(data_i)
         mu.append(mu_i)

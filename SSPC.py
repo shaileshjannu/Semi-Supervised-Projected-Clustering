@@ -8,8 +8,13 @@ class SSPC(object):
     """
 
     def __init__(self, k=6, m=0.5, building_dim_num=3):
-        self.k = k  # Number of clusters
-        self.m = m  # Threshold coefficient, m varies between (0,1)
+        """
+        :param k: number of clusters
+        :param m: threshold coefficient, m varies between (0,1)
+        :param building_dim_num: number of grid-building dimensions
+        """
+        self.k = k
+        self.m = m
         self.building_dim_num = building_dim_num
         self.data = None
         self.labeled_objects = None
@@ -36,7 +41,7 @@ class SSPC(object):
         """
         V = data_i.shape[1]
 
-        # Return a list of 0/1 values to show whether dim_j is selected.
+        # Return a list of selected dimensions.
         selected_dims = []
 
         # Calculate relevant statistics.
@@ -46,7 +51,7 @@ class SSPC(object):
         if mu_hat_i is not None:
             mu_tilde_i = mu_hat_i
 
-        # Loop over clusters to find relevant dimensions.
+        # Loop to find relevant dimensions.
         for j in range(V):
             if sample_var_i[j] ** 2 + (mu_i[j] - mu_tilde_i[j]) ** 2 < selection_threshold[j] ** 2:
                 selected_dims.append(j)
@@ -147,3 +152,26 @@ class SSPC(object):
                 # Find the relevant dimensions for this cluster.
                 selected_dims[i] = SSPC.select_dim(data[G[i]], selection_threshold)
         return G, selected_dims
+
+    @staticmethod
+    def replace_cluster_rep(reps, phi_i, G):
+        """
+        Find the worst performing cluster and replace its representative.
+        :param reps: current representatives used for each cluster
+        :param phi_i: objective function score for cluster i
+        :param G: private seed groups
+        :return: worst performing cluster and the new representative for it
+        """
+        # worst-performing cluster
+        wp_cluster = phi_i.index(min(phi_i))
+
+        # Find private seeds which are not used as other cluster reps.
+        available_reps = []
+        for rep in G[wp_cluster]:
+            if rep not in reps:
+                available_reps.append(rep)
+
+        # Randomly pick a seed as the new rep.
+        new_rep = np.random.choice(available_reps)
+        return {'worst_performing_cluster': wp_cluster,
+                'new_rep': new_rep}
