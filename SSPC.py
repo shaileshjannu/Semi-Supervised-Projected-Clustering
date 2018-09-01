@@ -20,7 +20,7 @@ class SSPC(object):
         self.data = None
         self.labeled_objects = None
         self.labeled_dimensions = None
-        self.private_seed_groups = None
+        self.seed_groups = None
         self.selected_dims = None
         self.reps = None
         self.clusters = None
@@ -153,14 +153,14 @@ class SSPC(object):
 
                 # Find the relevant dimensions for this cluster.
                 selected_dims[i] = SSPC.select_dim(data[G[i]], selection_threshold)
-        self.private_seed_groups = G
+        self.seed_groups = G
         self.selected_dims = selected_dims
 
     def draw_medoids(self):
         """
         Randomly initialize a list of medoids for each seed_groups without repetition.
         """
-        seed_groups = self.private_seed_groups
+        seed_groups = self.seed_groups
         medoids = {}
         for k in range(len(seed_groups)):
             number_to_choose = len(seed_groups[k + 1])
@@ -175,7 +175,7 @@ class SSPC(object):
         """
         # current representatives used for each cluster
         reps = self.reps
-        G = self.private_seed_groups
+        G = self.seed_groups
 
         # worst-performing cluster
         wp_cluster = phi_i.index(min(phi_i))
