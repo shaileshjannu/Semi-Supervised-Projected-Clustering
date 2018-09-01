@@ -1,4 +1,5 @@
 import numpy as np
+import random
 from utils import calc_stats_i, hill_climb, get_peak, max_min_dist
 
 
@@ -19,6 +20,10 @@ class SSPC(object):
         self.data = None
         self.labeled_objects = None
         self.labeled_dimensions = None
+        self.private_seed_groups = None
+        self.selected_dims = None
+        self.reps = None
+        self.clusters = None
 
     def fit(self, data, labeled_objects=None, labeled_dimensions=None):
         self.data = data
@@ -72,12 +77,9 @@ class SSPC(object):
         if labeled_dimensions_i:
             candidate_set = list(set(np.concatenate((candidate_set, labeled_dimensions_i))))
 
-        # TODO: Ask Vic to fix score function.
-        # score_ij = score_function_i(i, candidate_set, med_i)
-        score_ij = np.random.rand(len(candidate_set))
-
         # Each dimension in the set has a probability proportional to 
         # the score function of being selected as a building dimension of a grid.
+        score_ij = self.score_function_i(labeled_objects_i, candidate_set, med_i)
         score_ij /= sum(score_ij)
         building_dims = np.random.choice(a=candidate_set, size=building_dim_num, replace=False, p=score_ij)
 
@@ -151,17 +153,30 @@ class SSPC(object):
 
                 # Find the relevant dimensions for this cluster.
                 selected_dims[i] = SSPC.select_dim(data[G[i]], selection_threshold)
-        return G, selected_dims
+        self.private_seed_groups = G
+        self.selected_dims = selected_dims
 
-    @staticmethod
-    def replace_cluster_rep(reps, phi_i, G):
+    def draw_medoids(self):
+        """
+        Randomly initialize a list of medoids for each seed_groups without repetition.
+        """
+        seed_groups = self.private_seed_groups
+        medoids = {}
+        for k in range(len(seed_groups)):
+            number_to_choose = len(seed_groups[k + 1])
+            medoids.update({k: random.sample(seed_groups[k + 1], number_to_choose)})
+        self.reps = medoids
+
+    def replace_cluster_rep(self, phi_i):
         """
         Find the worst performing cluster and replace its representative.
-        :param reps: current representatives used for each cluster
         :param phi_i: objective function score for cluster i
-        :param G: private seed groups
         :return: worst performing cluster and the new representative for it
         """
+        # current representatives used for each cluster
+        reps = self.reps
+        G = self.private_seed_groups
+
         # worst-performing cluster
         wp_cluster = phi_i.index(min(phi_i))
 
@@ -175,3 +190,64 @@ class SSPC(object):
         new_rep = np.random.choice(available_reps)
         return {'worst_performing_cluster': wp_cluster,
                 'new_rep': new_rep}
+
+    def score_function_ij(self, i, j, medoid_used_j=None):
+        """
+        The score function of the i-th cluster in j dimension: input - data in i-th group of specific dimension.
+        Reminds that the miu used in first iteration is the medoid; while in later iterations it became the median.
+        m should be within range(0,1)
+        """
+        data_ij = (self.data[i])[:, j]
+        m = self.m
+        ni = len(data_ij)
+        miu = np.mean(data_ij)
+        sample_var = np.var(data_ij, ddof=1)
+        selection_threshold = m * sample_var
+
+        # Check whether medoids are given.
+        if medoid_used_j:
+            miu_tilda = data_ij[medoid_used_j]
+        else:
+            miu_tilda = np.median(data_ij)
+
+        # Calculate the score for i-th cluster, j-th dimension.
+        phi_ij = (ni - 1) * (1 - (sample_var + (miu - miu_tilda) ** 2) / selection_threshold)
+        return phi_ij
+
+    def score_function_i(self, i, selected_dims, medoid_used=None):
+        """
+        Calculate the score component of each cluster: sum of score component phi_ij over set of selected dimensions.
+        :param i: i-th cluster
+        :param selected_dims: selected dimensions for this cluster
+        :param medoid_used: medoid of the labelled objects clusters.
+        """
+        data_i = (self.data[i])[:, selected_dims]
+        phi_ij = []
+
+        # Calculate the score of each dimension in data_k
+        for j in range(data_i):
+
+            # Check whether medoid is given.
+            if medoid_used is None:
+                medoid_used_j = None
+            else:
+                medoid_used_j = medoid_used[j]
+            phi_ij.append(self.score_function_ij(i, j, medoid_used_j))
+
+        # Sum over selected dimensions
+        phi_i = sum(phi_ij)
+        return phi_i
+
+    def score_function_all(self, clusters, selected_dims, medoids_used=None):
+        phi_i = []
+        for i in clusters:
+
+            # Check whether medoids are given.
+            if medoids_used is None:
+                medoid_used = None
+            else:
+                medoid_used = medoids_used[i]
+            phi_i.append(self.score_function_i(i, selected_dims, medoid_used))
+
+        phi = sum(phi_i) / (self.data.shape[0] * self.data.shape[1])
+        return phi
