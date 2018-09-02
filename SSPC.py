@@ -9,15 +9,17 @@ class SSPC(object):
     Semi-Supervised Projected Clustering algorithm.
     """
 
-    def __init__(self, k, m=0.5, building_dim_num=3):
+    def __init__(self, k, m=0.5, building_dim_num=3, max_drop_len=3):
         """
         :param k: number of clusters
         :param m: threshold coefficient, m varies between (0,1)
         :param building_dim_num: number of grid-building dimensions
+        :param max_drop_len: maximal tolerable length of continuously decreasing sequence
         """
         self.k = k
         self.m = m
         self.building_dim_num = building_dim_num
+        self.max_drop_len = max_drop_len
         self.data = None
         self.labeled_objects = None
         self.labeled_dimensions = None
@@ -27,12 +29,45 @@ class SSPC(object):
         self.reps = None
         self.clusters = None
 
-    def fit(self, data, labeled_objects=None, labeled_dimensions=None):
+    def fit_and_predict(self, data, labeled_objects=None, labeled_dimensions=None):
         self.data = data
         self.labeled_objects = labeled_objects
         self.labeled_dimensions = labeled_dimensions
         self.initialize()
         self.draw_medoids()
+
+        # best score so far
+        best_phi = 0
+
+        # length of consecutive decrease
+        drop_length = 0
+        while drop_length < self.max_drop_len:
+
+            # Run cluster assignment.
+            clusters = self.assign_max()
+
+            # Find selected dimensions for each cluster.
+            selected_dims = []
+            for i in clusters:
+                selected_dims.append(self.select_dim(data[i], self.selection_threshold))
+
+            # Calculate current score.
+            phi_i = self.score_function_all(clusters, selected_dims)
+            phi = sum(phi_i) / (data.shape[0] * data.shape[1])
+
+            # Update best score and best clustering.
+            if phi > best_phi:
+                best_phi = phi
+                self.clusters = clusters
+                self.selected_dims = selected_dims
+                drop_length = 0
+            else:
+                drop_length += 1
+
+            # Replace rep (medoid) of the worst cluster.
+            self.replace_cluster_rep(list(phi_i))
+        return {'clusters': self.clusters,
+                'selected dimensions': self.selected_dims}
 
     @property
     def selection_threshold(self):
@@ -203,9 +238,10 @@ class SSPC(object):
             new_medoid = medoids[wp_cluster][i]
             if new_medoid not in reps:
                 reps[wp_cluster] = new_medoid
+
+                # Replace the front of the medoid bank by the new medoid.
                 medoids[wp_cluster].pop(i)
-                return {'worst_performing_cluster': wp_cluster,
-                        'new_rep': new_medoid}
+                medoids[wp_cluster][0] = new_medoid
 
     def score_function_ij(self, data_ij, medoid_used_j=None):
         """
@@ -267,9 +303,7 @@ class SSPC(object):
             else:
                 medoid_used = medoids_used[i]
             phi_i.append(sum(self.score_function_i(data[cluster], selected_dims, medoid_used)))
-
-        phi = sum(phi_i) / (data.shape[0] * data.shape[1])
-        return phi
+        return phi_i
 
     def assign_max(self):
         """
@@ -287,13 +321,13 @@ class SSPC(object):
         cluster_assigned = []
 
         # a list of relevant phi_i scores for assigned clusters
-        phi_i_scores = np.zeros(k)
+        # phi_i_scores = np.zeros(k)
         clusters = {}
 
         # Initialize clusters assigned.
         for i in range(k):
             clusters.update({i: []})
-            medoids_used = medoids[i].pop()
+            medoids_used = medoids[i][0]
             clusters[i].append(medoids_used)
 
         # list for currently used medoids
@@ -328,5 +362,5 @@ class SSPC(object):
             else:
                 cluster_assigned.append(np.argmax(phi_i))
                 clusters[cluster_assigned[n_i]].append(n_i)
-            phi_i_scores[cluster_assigned[n_i]] = max(phi_i)
-        return cluster_assigned, phi_i_scores
+            # phi_i_scores[cluster_assigned[n_i]] = max(phi_i)
+        return clusters
