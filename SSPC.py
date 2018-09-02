@@ -9,7 +9,7 @@ class SSPC(object):
     Semi-Supervised Projected Clustering algorithm.
     """
 
-    def __init__(self, k=6, m=0.5, building_dim_num=3):
+    def __init__(self, k, m=0.5, building_dim_num=3):
         """
         :param k: number of clusters
         :param m: threshold coefficient, m varies between (0,1)
@@ -31,6 +31,8 @@ class SSPC(object):
         self.data = data
         self.labeled_objects = labeled_objects
         self.labeled_dimensions = labeled_dimensions
+        self.initialize()
+        self.draw_medoids()
 
     @property
     def selection_threshold(self):
@@ -79,9 +81,23 @@ class SSPC(object):
         if labeled_dimensions_i:
             candidate_set = list(set(np.concatenate((candidate_set, labeled_dimensions_i))))
 
-        # Each dimension in the set has a probability proportional to 
+        # Make sure the candidate set is big enough for grid building.
+        if len(candidate_set) < building_dim_num:
+            candidate_set = np.concatenate((
+                candidate_set,
+                np.random.choice(
+                    a=np.delete(range(data.shape[1]), candidate_set),
+                    size=building_dim_num - len(candidate_set),
+                    replace=False
+                )))
+
+        # Each dimension in the set has a probability proportional to
         # the score function of being selected as a building dimension of a grid.
         score_ij = self.score_function_i(data_i, candidate_set, med_i)
+
+        # Standardize for probability distribution.
+        if min(score_ij) < 0:
+            score_ij -= 2 * min(score_ij)
         score_ij /= sum(score_ij)
         building_dims = np.random.choice(a=candidate_set, size=building_dim_num, replace=False, p=score_ij)
 
@@ -165,8 +181,8 @@ class SSPC(object):
         seed_groups = self.seed_groups
         medoids = {}
         for k in range(len(seed_groups)):
-            number_to_choose = len(seed_groups[k + 1])
-            medoids.update({k: random.sample(seed_groups[k + 1], number_to_choose)})
+            number_to_choose = len(seed_groups[k])
+            medoids.update({k: random.sample(seed_groups[k], number_to_choose)})
         self.medoid_bank = medoids
 
     def replace_cluster_rep(self, phi_i):
@@ -205,12 +221,15 @@ class SSPC(object):
 
         # Check whether medoids are given.
         if medoid_used_j:
-            miu_tilde = data_ij[medoid_used_j]
+            miu_tilde = medoid_used_j
         else:
             miu_tilde = np.median(data_ij)
 
         # Calculate the score for i-th cluster, j-th dimension.
-        phi_ij = (ni - 1) * (1 - (sample_var + (miu - miu_tilde) ** 2) / selection_threshold)
+        if np.isclose(selection_threshold, 0):
+            phi_ij = ni - 1
+        else:
+            phi_ij = (ni - 1) * (1 - (sample_var + (miu - miu_tilde) ** 2) / selection_threshold)
         return phi_ij
 
     def score_function_i(self, data_i, selected_dims, medoid_used=None):
