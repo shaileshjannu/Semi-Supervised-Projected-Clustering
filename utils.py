@@ -1,29 +1,8 @@
 import numpy as np
-import pandas
-# from sklearn import preprocessing
-
-
-def preprocess(input_path):
-    # Read data and store it in a dataframe.
-    df = pandas.read_csv(input_path)
-
-    # Convert string data columns to categorical.
-    obj_columns = df.select_dtypes(['object']).columns
-    
-    # Ignore categorical values for now.
-    df = df.drop(df[obj_columns], axis=1)
-    
-    # TODO: Convert categorical data to a reasonable form.
-    # df[obj_columns] = df[obj_columns].astype('category').apply(lambda x: x.cat.codes)
-    
-    # TODO: Think about scaling.
-    # data = preprocessing.scale(np.array(df))
-    data = np.array(df)
-    return data
 
 
 def calc_stats_i(data_i):
-    V = data_i.shape[1]
+    V = data_i.shape[-1]
     mu_i = []
     mu_tilde_i = []
     sample_var_i = []
@@ -90,12 +69,12 @@ def define_edges(centre, edge_lengths):
     return edges
 
 
-def hill_climb(data, curr_centre, step_lengths):
+def hill_climb(data, curr_centre, edge_lengths, step_lengths):
     """
     Hill-climbing to find the cell with highest density. 
     """
     # Find the central cell count.
-    curr_edges = define_edges(curr_centre, step_lengths)
+    curr_edges = define_edges(curr_centre, edge_lengths)
     curr_bin = bin_cell(data, curr_edges)
     
     # Find the denser cell than current centre.
@@ -105,7 +84,7 @@ def hill_climb(data, curr_centre, step_lengths):
     
     # Explore the neighbouring cells.
     for i in range(len(step_lengths)):
-        for sign in [-1, 1]:
+        for sign in range(-5, 6, 1):
             
             # Move to the neighbouring centre.
             step_length = step_lengths[i]
@@ -113,7 +92,7 @@ def hill_climb(data, curr_centre, step_lengths):
             cell_centre[i] += sign * step_length
 
             # Bin the neighbouring cell.
-            cell_edges = define_edges(cell_centre, step_lengths)
+            cell_edges = define_edges(cell_centre, edge_lengths)
             cell_bin = bin_cell(data, cell_edges)
 
             # Find the most dense cell.
@@ -126,7 +105,7 @@ def hill_climb(data, curr_centre, step_lengths):
     if not denser_found:
         return max_bin
     else:
-        return hill_climb(data, max_centre, step_lengths)
+        return hill_climb(data, max_centre, edge_lengths, step_lengths)
     
 
 def get_peak(data, step_lengths):
@@ -151,6 +130,9 @@ def max_min_dist(data, sd_data, G, selected_dims):
     """
     Sort the ungrouped data points according to min-dist to grouped points.
     """
+    if G is None or len(G) == 0:
+        return np.random.randint(0, len(data))
+
     # Find all ungrouped points.
     ungrouped_points = np.arange(len(data))
     ungrouped_points = np.delete(ungrouped_points, np.concatenate((G.values())))

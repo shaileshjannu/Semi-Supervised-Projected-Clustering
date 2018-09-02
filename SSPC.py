@@ -1,6 +1,5 @@
 import numpy as np
 import random
-import pandas as pd
 from utils import calc_stats_i, hill_climb, get_peak, max_min_dist
 
 
@@ -30,14 +29,15 @@ class SSPC(object):
         self.clusters = None
 
     def fit_and_predict(self, data, labeled_objects=None, labeled_dimensions=None):
-        self.data = data
+        self.data = np.asarray(data)
+        data = self.data
         self.labeled_objects = labeled_objects
         self.labeled_dimensions = labeled_dimensions
         self.initialize()
         self.draw_medoids()
 
         # best score so far
-        best_phi = 0
+        best_phi = None
 
         # length of consecutive decrease
         drop_length = 0
@@ -56,7 +56,7 @@ class SSPC(object):
             phi = sum(phi_i) / (data.shape[0] * data.shape[1])
 
             # Update best score and best clustering.
-            if phi > best_phi:
+            if best_phi is None or phi > best_phi:
                 best_phi = phi
                 self.clusters = clusters
                 self.selected_dims = selected_dims
@@ -83,7 +83,7 @@ class SSPC(object):
         Select relevant dimensions for clusters, which must obey:
         s[i][j] ** 2 + (mu[i][j] - mu_tilde[i][j]) ** 2 < s_hat[i][j] ** 2
         """
-        V = data_i.shape[1]
+        V = data_i.shape[-1]
 
         # Return a list of selected dimensions.
         selected_dims = []
@@ -114,7 +114,7 @@ class SSPC(object):
         # those in labeled_dimensions (if any).
         candidate_set = SSPC.select_dim(data_i, selection_threshold, med_i)
         if labeled_dimensions_i:
-            candidate_set = list(set(np.concatenate((candidate_set, labeled_dimensions_i))))
+            candidate_set = list(set(candidate_set + labeled_dimensions_i))
 
         # Make sure the candidate set is big enough for grid building.
         if len(candidate_set) < building_dim_num:
@@ -131,8 +131,11 @@ class SSPC(object):
         score_ij = self.score_function_i(data_i, candidate_set, med_i)
 
         # Standardize for probability distribution.
-        if min(score_ij) < 0:
-            score_ij -= 2 * min(score_ij)
+        if max(score_ij) == min(score_ij):
+            score_ij = np.array([1.0] * len(score_ij))
+        else:
+            score_ij = np.array([(score_ij[i] - min(score_ij)) / (max(score_ij) - min(score_ij))
+                                 for i in range(len(score_ij))])
         score_ij /= sum(score_ij)
         building_dims = np.random.choice(a=candidate_set, size=building_dim_num, replace=False, p=score_ij)
 
@@ -142,7 +145,8 @@ class SSPC(object):
         med_i_grid = med_i[building_dims]
 
         # Apply hill-climbing search to find most dense cell.
-        seed_group_i = hill_climb(data_grid, med_i_grid, sd_grid)
+        # TODO: replace the magic number 10
+        seed_group_i = hill_climb(data_grid, med_i_grid, sd_grid, sd_grid / 10)
         return seed_group_i
 
     def initialize(self):
@@ -162,8 +166,8 @@ class SSPC(object):
 
         # Loop over clusters with both labeled objects and labeled dimensions.
         for i in range(k):
-            if ((i < len(labeled_objects) and len(labeled_objects[i]) > 0)
-                    and (i < len(labeled_dimensions) and len(labeled_dimensions[i]) > 0)):
+            if ((labeled_objects and i < len(labeled_objects) and len(labeled_objects[i]) > 0)
+                    and (labeled_dimensions and i < len(labeled_dimensions) and len(labeled_dimensions[i]) > 0)):
                 seed_groups[i] = self.private_seeds_for_labeled_objects(labeled_objects[i], labeled_dimensions[i])
 
                 # Find the relevant dimensions for this cluster.
@@ -171,8 +175,10 @@ class SSPC(object):
 
         # Loop over clusters with only labeled objects.
         for i in range(k):
-            if ((i < len(labeled_objects) and len(labeled_objects[i]) > 0)
-                    and not (i < len(labeled_dimensions) and len(labeled_dimensions[i]) > 0)):
+            if ((labeled_objects and i < len(labeled_objects) and len(labeled_objects[i]) > 0)
+                    and (labeled_dimensions is None or
+                         not (i < len(labeled_dimensions) and
+                              len(labeled_dimensions[i]) > 0))):
                 seed_groups[i] = self.private_seeds_for_labeled_objects(labeled_objects[i])
 
                 # Find the relevant dimensions for this cluster.
@@ -180,8 +186,8 @@ class SSPC(object):
 
         # Loop over clusters with only labeled dimensions.
         for i in range(k):
-            if ((not (i < len(labeled_objects) and len(labeled_objects[i]) > 0))
-                    and (i < len(labeled_dimensions) and len(labeled_dimensions[i]) > 0)):
+            if ((labeled_objects is None or not (i < len(labeled_objects) and len(labeled_objects[i]) > 0))
+                    and (labeled_dimensions and i < len(labeled_dimensions) and len(labeled_dimensions[i]) > 0)):
                 candidate_set = labeled_dimensions[i]
                 building_dims = np.random.choice(a=candidate_set, size=building_dim_num, replace=False)
 
@@ -197,12 +203,14 @@ class SSPC(object):
 
         # Loop over clusters with no input.
         for i in range(k):
-            if not ((i < len(labeled_objects) and len(labeled_objects[i]) > 0)
-                    and (i < len(labeled_dimensions) and len(labeled_dimensions[i]) > 0)):
+            if (labeled_objects is None or
+                    not (i < len(labeled_objects) and len(labeled_objects[i]) > 0)
+                    and (labeled_dimensions is None or
+                         not (i < len(labeled_dimensions) and len(labeled_dimensions[i]) > 0))):
                 # Pick the seed whose minimum distance to all the seeds already picked
                 # by other seed groups is maximum, as the median.
                 med_i = data[max_min_dist(data, sd_data, seed_groups, selected_dims)]
-                seed_groups[i] = hill_climb(data, med_i, sd_data)
+                seed_groups[i] = hill_climb(data, med_i, sd_data, sd_data)
 
                 # Find the relevant dimensions for this cluster.
                 selected_dims[i] = SSPC.select_dim(data[seed_groups[i]], selection_threshold)
@@ -242,6 +250,7 @@ class SSPC(object):
                 # Replace the front of the medoid bank by the new medoid.
                 medoids[wp_cluster].pop(i)
                 medoids[wp_cluster][0] = new_medoid
+                break
 
     def score_function_ij(self, data_ij, medoid_used_j=None):
         """
@@ -262,7 +271,7 @@ class SSPC(object):
             miu_tilde = np.median(data_ij)
 
         # Calculate the score for i-th cluster, j-th dimension.
-        if np.isclose(selection_threshold, 0):
+        if ni == 1 or np.isclose(selection_threshold, 0):
             phi_ij = ni - 1
         else:
             phi_ij = (ni - 1) * (1 - (sample_var + (miu - miu_tilde) ** 2) / selection_threshold)
@@ -286,9 +295,6 @@ class SSPC(object):
             else:
                 medoid_used_j = medoid_used[j]
             phi_ij.append(self.score_function_ij(data_i[:, j], medoid_used_j))
-
-        # Sum over selected dimensions
-        # phi_i = sum(phi_ij)
         return phi_ij
 
     def score_function_all(self, clusters, selected_dims, medoids_used=None):
@@ -321,17 +327,16 @@ class SSPC(object):
         cluster_assigned = []
 
         # a list of relevant phi_i scores for assigned clusters
-        # phi_i_scores = np.zeros(k)
-        clusters = {}
+        clusters = []
 
         # Initialize clusters assigned.
         for i in range(k):
-            clusters.update({i: []})
+            clusters.append([])
             medoids_used = medoids[i][0]
             clusters[i].append(medoids_used)
 
         # list for currently used medoids
-        lst = [item[0] for item in clusters.values()]
+        lst = [item[0] for item in clusters]
         self.reps = lst
 
         # For each new data input, calculate the new score_i for every cluster and assign the maximum
@@ -343,16 +348,15 @@ class SSPC(object):
                 cluster = clusters[i]
 
                 # current available data in i-th cluster
-                data_i = data[cluster]
+                data_i = data[cluster].copy()
 
                 # Calculate the score_ij.
                 phi_ij = []
                 for j in selected_dimensions[i]:
 
                     # j-th dimension of data in i-th cluster
-                    data_ij = data_i[j]
-                    data_ij.append(new_dat_point[j])
-                    data_ij = pd.DataFrame(data_ij)
+                    data_ij = data_i[:, j]
+                    data_ij = np.append(data_ij, new_dat_point[j])
                     phi_ij.append(self.score_function_ij(data_ij))
                 phi_i.append(sum(phi_ij))
 
@@ -360,7 +364,6 @@ class SSPC(object):
             if n_i in lst:
                 cluster_assigned.append(lst.index(n_i))
             else:
-                cluster_assigned.append(np.argmax(phi_i))
+                cluster_assigned.append(phi_i.index(max(phi_i)))
                 clusters[cluster_assigned[n_i]].append(n_i)
-            # phi_i_scores[cluster_assigned[n_i]] = max(phi_i)
         return clusters
