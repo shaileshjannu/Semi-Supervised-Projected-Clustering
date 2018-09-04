@@ -25,6 +25,7 @@ class SSPC(object):
         self.seed_groups = None
         self.selected_dims = None
         self.medoid_bank = None
+        self.medoids_used = None
         self.reps = None
         self.clusters = None
 
@@ -221,12 +222,18 @@ class SSPC(object):
         """
         Randomly initialize a list of medoids for each seed_groups without repetition.
         """
+        reps = []
         seed_groups = self.seed_groups
         medoids = {}
+        medoids_used = []
         for k in range(len(seed_groups)):
             number_to_choose = len(seed_groups[k])
             medoids.update({k: random.sample(seed_groups[k], number_to_choose)})
+            reps.append(self.data[medoids[k][0]])
+            medoids_used.append(medoids[k][0])
         self.medoid_bank = medoids
+        self.reps = reps
+        self.medoids_used = medoids_used
 
     def replace_cluster_rep(self, phi_i):
         """
@@ -237,6 +244,9 @@ class SSPC(object):
         # current representatives used for each cluster
         reps = self.reps
         medoids = self.medoid_bank
+        medoids_used = self.medoids_used
+        clusters = self.clusters
+        data = self.data
 
         # worst-performing cluster
         wp_cluster = phi_i.index(min(phi_i))
@@ -244,13 +254,20 @@ class SSPC(object):
         # Find potential medoid which is not used as another cluster's rep.
         for i in range(len(medoids[wp_cluster])):
             new_medoid = medoids[wp_cluster][i]
-            if new_medoid not in reps:
-                reps[wp_cluster] = new_medoid
+            if new_medoid not in medoids_used:
+                reps[wp_cluster] = data[new_medoid]
 
                 # Replace the front of the medoid bank by the new medoid.
                 medoids[wp_cluster].pop(i)
                 medoids[wp_cluster][0] = new_medoid
+                self.medoids_used = [new_medoid]
                 break
+
+        # Replace all other cluster reps by current medians.
+        for i in range(len(reps)):
+            if i != wp_cluster:
+                reps[i] = [np.median(data[clusters[i]][:, j]) for j in range(data.shape[1])]
+        self.reps = reps
 
     def score_function_ij(self, data_ij, medoid_used_j=None):
         """
@@ -320,24 +337,19 @@ class SSPC(object):
         k = self.k
         selected_dimensions = self.selected_dims
 
-        # the medoids list selected for each cluster
-        medoids = self.medoid_bank
-
         # a list of assigned clusters for each individual data
         cluster_assigned = []
 
         # a list of relevant phi_i scores for assigned clusters
         clusters = []
 
+        # list for currently used reps
+        reps = self.reps
+        print(reps)
+
         # Initialize clusters assigned.
         for i in range(k):
             clusters.append([])
-            medoids_used = medoids[i][0]
-            clusters[i].append(medoids_used)
-
-        # list for currently used medoids
-        lst = [item[0] for item in clusters]
-        self.reps = lst
 
         # For each new data input, calculate the new score_i for every cluster and assign the maximum
         for n_i in range(len(data)):
@@ -346,6 +358,8 @@ class SSPC(object):
 
             for i in range(k):
                 cluster = clusters[i]
+                print(cluster)
+                rep = reps[i]
 
                 # current available data in i-th cluster
                 data_i = data[cluster].copy()
@@ -357,13 +371,10 @@ class SSPC(object):
                     # j-th dimension of data in i-th cluster
                     data_ij = data_i[:, j]
                     data_ij = np.append(data_ij, new_dat_point[j])
-                    phi_ij.append(self.score_function_ij(data_ij))
+                    phi_ij.append(self.score_function_ij(data_ij, rep[j]))
                 phi_i.append(sum(phi_ij))
 
-            # Handle medoids separately.
-            if n_i in lst:
-                cluster_assigned.append(lst.index(n_i))
-            else:
-                cluster_assigned.append(phi_i.index(max(phi_i)))
-                clusters[cluster_assigned[n_i]].append(n_i)
+            # Add the point to a cluster which maximizes phi_i.
+            cluster_assigned.append(phi_i.index(max(phi_i)))
+            clusters[cluster_assigned[n_i]].append(n_i)
         return clusters
