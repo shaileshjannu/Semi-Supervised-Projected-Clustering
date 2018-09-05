@@ -34,7 +34,7 @@ class TestWithMockData(unittest.TestCase):
         sspc.data = np.asarray(self.data)
         sspc.labeled_objects = self.labeled_objects
         sspc.labeled_dimensions = self.labeled_dimensions
-        sspc.initialize()
+        sspc._initialize()
         for seed_group_i in range(len(sspc.seed_groups)):
             seed_group = sspc.seed_groups[seed_group_i]
             labeled_object = sspc.labeled_objects[seed_group_i]
@@ -48,6 +48,7 @@ class TestWithMockData(unittest.TestCase):
         clusters, selected_dims = res['clusters'], res['selected dimensions']
         print(clusters)
         print(selected_dims)
+
         # Test clustering and selected dimensions.
         for i in range(len(clusters)):
             self.assertEqual(clusters[i], self.clusters[i])
